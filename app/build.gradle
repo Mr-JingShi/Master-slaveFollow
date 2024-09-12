@@ -1,0 +1,45 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    compileSdk rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.masterslavefollow.demo"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0"
+    }
+    compileOptions {
+        sourceCompatibility rootProject.ext.javaVersion
+        targetCompatibility rootProject.ext.javaVersion
+    }
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled true
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.4.1'
+    implementation 'com.google.android.material:material:1.5.0'
+
+    // Add this library
+    implementation 'com.github.MuntashirAkon:libadb-android:3.0.0'
+
+    // Library to generate X509Certificate. You can also use BouncyCastle for this.
+    implementation 'com.github.MuntashirAkon:sun-security-android:1.1'
+
+    // Bypass hidden API if you want to use Android default conscrypt. It also requires additional steps.
+    // See https://github.com/LSPosed/AndroidHiddenApiBypass to find out more about this.
+    // Comment out the line below if you do not need this.
+    implementation 'org.lsposed.hiddenapibypass:hiddenapibypass:4.3'
+
+    // Uncomment the line below if you want to use the custom conscrypt.
+    // implementation 'org.conscrypt:conscrypt-android:2.5.2'
+}

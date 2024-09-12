@@ -1,0 +1,25 @@
+<resources>
+    <string name="app_name">Master-slaveFollow</string>
+    <string name="connect_adb">Connect</string>
+    <string name="pair_adb">Pair</string>
+    <string name="enter_command">Enter command</string>
+    <string name="run_command">Run</string>
+    <string name="pairing_successful">Pairing successful!</string>
+    <string name="pairing_failed">Pairing failed!</string>
+    <string name="connected_to_adb">Connected to ADB!</string>
+    <string name="disconnected_from_adb">Disconnected from ADB!</string>
+    <string name="disconnect_adb">Disconnect</string>
+    <string name="accessibility_description">SMaster-slaveFollow\n支持功能：\n1. 用例录制回放\n2. 一机多控</string>
+    <string name="switch_app">切换应用</string>
+    <string name="select_case">选择用例</string>
+    <string name="pair">配对</string>
+    <string name="connect">连接</string>
+    <string name="cancel">取消</string>
+    <string name="adb_tcpip_title">ADB-TCPIP调试</string>
+    <string name="adb_pair_title">ADB-PAIR调试</string>
+    <string name="adb_pair_subtitle">开发者模式-无线调试-使用配对码配对设备\n如果无线调试已打开，请先关闭，否则无法配对</string>
+    <string name="adb_connect_success">连接成功</string>
+    <string name="adb_connect_failed">连接失败</string>
+    <string name="pairing_code">WLAN配对码</string>
+    <string name="port_number">端口号</string>
+</resources>
