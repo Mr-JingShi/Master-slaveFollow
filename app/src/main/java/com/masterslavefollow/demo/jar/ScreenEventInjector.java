@@ -2,11 +2,14 @@ package com.masterslavefollow.demo.jar;
 
 import android.os.SystemClock;
 import android.view.InputDevice;
+import android.view.KeyCharacterMap;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 
 import com.masterslavefollow.demo.ScreenEventTracker;
-import com.masterslavefollow.demo.Utils;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
@@ -16,66 +19,71 @@ import java.util.Scanner;
 
 public class ScreenEventInjector {
     private static String HOST;
+    private static String EXTERNAL_PATH;
     private static int PORT;
     private static int NAVIGATION_BAR_HEIGHT;
+    private static String ANDROID_ID;
+    private static boolean LOCAL_PLAYBACK = false;
 
     public static void main(String[] args) {
         try {
             HOST = args[0];
-            PORT = Integer.parseInt(args[1]);
-            NAVIGATION_BAR_HEIGHT = Integer.parseInt(args[2]);
+            EXTERNAL_PATH = args[1];
+            PORT = Integer.parseInt(args[2]);
+            NAVIGATION_BAR_HEIGHT = Integer.parseInt(args[3]);
+            ANDROID_ID = args[4];
 
-            Thread screenEventInjectorThread = new ScreenEventInjectorThread();
-            screenEventInjectorThread.start();
+            Thread thread = new ScreenEventInjectorThread();
+            thread.start();
 
-            screenEventInjectorThread.join();
+            thread.join();
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
     private static class FloatRectInfo {
+        boolean valid;
         int left;
         int top;
         int right;
         int bottom;
 
         public FloatRectInfo() {
-            clear();
+            valid = false;
         }
 
         @Override
         public String toString() {
-            return "left:" + left + ", top:" + top + ", right:" + right + ", bottom:" + bottom;
+            if (valid) {
+                return "left:" + left + ", top:" + top + ", right:" + right + ", bottom:" + bottom;
+            }
+            return "invalid";
         }
+    }
 
-        public void clear() {
-            left = Integer.MAX_VALUE;
-            top = Integer.MAX_VALUE;
-            right = Integer.MIN_VALUE;
-            bottom = Integer.MIN_VALUE;
-        }
+    private enum DownStatus {
+        DOWN_STATUS_NOT_RECV,
+        DOWN_STATUS_RECV,
+        DOWN_STATUS_SEND
     }
 
     private static class ScreenEventInjectorThread extends Thread {
         private int[] xy = new int[2];
-
         private boolean[] waitForXY = {true, true};
-
         private long lastTouchDown;
-
-        private boolean recvDown = false;
-
-        private ScreenEventTracker.DeviceInfo deviceInfo = null;
-        private FloatRectInfo targetFloatRectInfo = new FloatRectInfo();
-        private FloatRectInfo toolFloatRectInfo = new FloatRectInfo();
-        private FloatRectInfo navigationFloatRectInfo = new FloatRectInfo();
-        private FloatRectInfo inputmethodFloatRectInfo = new FloatRectInfo();
+        private DownStatus downStatus = DownStatus.DOWN_STATUS_NOT_RECV;
+        private String editViewText;
+        private ScreenEventTracker.DeviceInfo remoteDeviceInfo = null;
+        private FloatRectInfo remoteTargetFRI = new FloatRectInfo();
+        private FloatRectInfo remoteToolFRI = new FloatRectInfo();
+        private FloatRectInfo remoteNavigationFRI = new FloatRectInfo();
+        private FloatRectInfo remoteInputmethodFRI = new FloatRectInfo();
+        private FloatRectInfo selfInputmethodFRI = new FloatRectInfo();
         private float xRate = 0.0f;
         private float yRate = 0.0f;
         private int selfWidth = 0;
         private int selfHeight = 0;
-
         private final int pointerCount = 1;
         private MotionEvent.PointerProperties[] pointerProperties;
         private MotionEvent.PointerCoords[] pointerCoords;
@@ -112,13 +120,12 @@ public class ScreenEventInjector {
                     if (splited2.length == 2) {
                         selfWidth = Integer.parseInt(splited2[0].trim());
                         selfHeight = Integer.parseInt(splited2[1].trim());
+                        System.out.println("selfWidth:" + selfWidth + ", selfHeight:" + selfHeight);
                     }
                 }
             } catch (Exception e) {
                 e.printStackTrace();
             }
-            selfHeight -= NAVIGATION_BAR_HEIGHT;
-            System.out.println("selfWidth:" + selfWidth + ", selfHeight:" + selfHeight);
 
             pointerProperties = new MotionEvent.PointerProperties[pointerCount];
             pointerCoords = new MotionEvent.PointerCoords[pointerCount];
@@ -159,44 +166,120 @@ public class ScreenEventInjector {
 
                     System.out.println("slave recv event:" + line);
 
-                    if (line.startsWith("DEVICE_INFO")) {
+                    if (!LOCAL_PLAYBACK && remoteInputmethodFRI.valid && !selfInputmethodFRI.valid) {
+                        String name = EXTERNAL_PATH + "/slave/inputMethodRectInfo.txt";
+                        File file = new File(name);
+                        if (file.exists()) {
+                            FileInputStream fis = new FileInputStream(file);
+                            byte[] buf = new byte[(int)file.length()];
+                            fis.read(buf, 0, buf.length);
+                            fis.close();
+
+                            String content = new String(buf, 0, buf.length - 1, "UTF-8");
+                            System.out.println("content:" + content);
+                            String[] splited = content.split(";");
+                            if (splited.length == 5) {
+                                selfInputmethodFRI.valid = true;
+                                selfInputmethodFRI.left = Integer.parseInt(splited[1]);
+                                selfInputmethodFRI.top = Integer.parseInt(splited[2]);
+                                selfInputmethodFRI.right = Integer.parseInt(splited[3]);
+                                selfInputmethodFRI.bottom = Integer.parseInt(splited[4]);
+                                System.out.println("selfInputmethodFRI:" + selfInputmethodFRI.toString());
+                            }
+                        }
+                    }
+
+                    // case 1:
+                    // [  121045.748499] /dev/input/event2: EV_ABS       ABS_MT_TRACKING_ID   00000760
+                    // [  121045.748499] /dev/input/event2: EV_ABS       ABS_MT_TOUCH_MAJOR   0000000f
+                    // [  121045.748499] /dev/input/event2: EV_ABS       ABS_MT_WIDTH_MAJOR   0000000f
+                    // [  121045.748499] /dev/input/event2: EV_ABS       ABS_MT_PRESSURE      0000000f
+                    // [  121045.748499] /dev/input/event2: EV_ABS       ABS_MT_POSITION_X    00001338
+                    // [  121045.748499] /dev/input/event2: EV_ABS       ABS_MT_POSITION_Y    00002dfa
+                    // [  121045.748499] /dev/input/event2: EV_KEY       BTN_TOUCH            DOWN
+                    // [  121045.748499] /dev/input/event2: EV_SYN       SYN_REPORT           00000000
+
+                    // case 2:
+                    // [    1018.868469] /dev/input/event2: EV_KEY       BTN_TOUCH            DOWN
+                    // [    1018.868469] /dev/input/event2: EV_ABS       ABS_MT_TRACKING_ID   00000026
+                    // [    1018.868469] /dev/input/event2: EV_ABS       ABS_MT_POSITION_X    0000020d
+                    // [    1018.868469] /dev/input/event2: EV_ABS       ABS_MT_POSITION_Y    00000466
+                    // [    1018.868469] /dev/input/event2: EV_ABS       ABS_MT_PRESSURE      0000001e
+                    // [    1018.868469] /dev/input/event2: EV_SYN       SYN_REPORT           00000000
+                    if (line.contains("ABS_MT_POSITION_X")) {
+                        String[] splited = line.split("ABS_MT_POSITION_X");
+                        String x = splited[splited.length - 1].trim();
+                        xy[0] = Integer.parseInt(x, 16);
+
+                        waitForXY[0] = false;
+
+                        if (downStatus == DownStatus.DOWN_STATUS_SEND) {
+                            move();
+                        } else if (downStatus == DownStatus.DOWN_STATUS_RECV) {
+                            down();
+                        }
+                    } else if (line.contains("ABS_MT_POSITION_Y")) {
+                        String[] splited = line.split("ABS_MT_POSITION_Y");
+                        String y = splited[splited.length - 1].trim();
+                        xy[1] = Integer.parseInt(y, 16);
+
+                        waitForXY[1] = false;
+
+                        if (downStatus == DownStatus.DOWN_STATUS_SEND) {
+                            move();
+                        } else if (downStatus == DownStatus.DOWN_STATUS_RECV) {
+                            down();
+                        }
+                    } else if (line.contains("BTN_TOUCH")) {
+                        if (line.contains("UP")) {
+                            downStatus = DownStatus.DOWN_STATUS_NOT_RECV;
+                            waitForXY[0] = waitForXY[1] = true;
+                            inject(MotionEvent.ACTION_UP, xy[0], xy[1]);
+                        } else if (line.contains("DOWN")) {
+                            downStatus = DownStatus.DOWN_STATUS_RECV;
+                            down();
+                        }
+                    } else if (line.startsWith("DEVICE_INFO")) {
                         // DEVICE_INFO ADD_DEVICE:/dev/input/event2;NAME:himax-touchscreen;ABS_X:12000;ABS_Y:19200;WIDTH:1920;HEIGTH:1200;DISPLAY_ID:0
-                        deviceInfo = new ScreenEventTracker.DeviceInfo();
+                        remoteDeviceInfo = new ScreenEventTracker.DeviceInfo();
                         String[] splited = line.substring("DEVICE_INFO".length() + 1).split(";");
                         for (String s : splited) {
                             String[] kv = s.split(":");
                             if (kv.length == 2) {
                                 if (kv[0].equals("ADD_DEVICE")) {
-                                    deviceInfo.add_device = kv[1];
+                                    remoteDeviceInfo.add_device = kv[1];
                                 } else if (kv[0].equals("NAME")) {
-                                    deviceInfo.name = kv[1];
+                                    remoteDeviceInfo.name = kv[1];
                                 } else if (kv[0].equals("ABS_X")) {
-                                    deviceInfo.abs_x = Integer.parseInt(kv[1]);
+                                    remoteDeviceInfo.abs_x = Integer.parseInt(kv[1]);
                                 } else if (kv[0].equals("ABS_Y")) {
-                                    deviceInfo.abs_y = Integer.parseInt(kv[1]);
+                                    remoteDeviceInfo.abs_y = Integer.parseInt(kv[1]);
                                 } else if (kv[0].equals("WIDTH")) {
-                                    deviceInfo.width = Integer.parseInt(kv[1]);
-                                } else if (kv[0].equals("HEIGTH")) {
-                                    deviceInfo.height = Integer.parseInt(kv[1]);
+                                    remoteDeviceInfo.width = Integer.parseInt(kv[1]);
+                                } else if (kv[0].equals("HEIGHT")) {
+                                    remoteDeviceInfo.height = Integer.parseInt(kv[1]);
                                 } else if (kv[0].equals("ORIENTATION")) {
-                                    deviceInfo.orientation = Integer.parseInt(kv[1]);
+                                    remoteDeviceInfo.orientation = Integer.parseInt(kv[1]);
                                 } else if (kv[0].equals("DISPLAY_ID")) {
-                                    deviceInfo.display_id = Integer.parseInt(kv[1]);
+                                    remoteDeviceInfo.display_id = Integer.parseInt(kv[1]);
+                                } else if (kv[0].equals("NAVIGATION_BAR_HEIGHT")) {
+                                    remoteDeviceInfo.navigation_bar_height = Integer.parseInt(kv[1]);
                                 }
                             }
                         }
 
-                        System.out.println("deviceInfo:" + deviceInfo.toString());
+                        System.out.println("deviceInfo:" + remoteDeviceInfo.toString());
 
-                        xRate = (float) deviceInfo.width / deviceInfo.abs_x;
-                        yRate = (float) deviceInfo.height / deviceInfo.abs_y;
+                        xRate = (float) remoteDeviceInfo.width / remoteDeviceInfo.abs_x;
+                        yRate = (float) remoteDeviceInfo.height / remoteDeviceInfo.abs_y;
 
                         System.out.println("xRate:" + xRate + ", yRate:" + yRate);
                     } else if (line.startsWith("WINDOWS_CHANGED")) {
-                        targetFloatRectInfo.clear();
-                        toolFloatRectInfo.clear();
-                        navigationFloatRectInfo.clear();
-                        inputmethodFloatRectInfo.clear();
+                        remoteTargetFRI.valid = false;
+                        remoteToolFRI.valid = false;
+                        remoteNavigationFRI.valid = false;
+                        remoteInputmethodFRI.valid = false;
+                        selfInputmethodFRI.valid = false;
 
                         String[] outerSplited = line.substring("WINDOWS_CHANGED".length() + 1).split(";;");
 
@@ -209,13 +292,13 @@ public class ScreenEventInjector {
                                 if (kv.length == 2) {
                                     if (kv[0].equals("TYPE")) {
                                         if ("target".equals(kv[1])) {
-                                            floatRectInfo = targetFloatRectInfo;
+                                            floatRectInfo = remoteTargetFRI;
                                         } else if ("tool".equals(kv[1])) {
-                                            floatRectInfo = toolFloatRectInfo;
+                                            floatRectInfo = remoteToolFRI;
                                         } else if ("navigation".equals(kv[1])) {
-                                            floatRectInfo = navigationFloatRectInfo;
+                                            floatRectInfo = remoteNavigationFRI;
                                         } else if ("inputmethod".equals(kv[1])) {
-                                            floatRectInfo = inputmethodFloatRectInfo;
+                                            floatRectInfo = remoteInputmethodFRI;
                                         } else {
                                             break;
                                         }
@@ -237,45 +320,48 @@ public class ScreenEventInjector {
                                     } else if (kv[0].equals("BOTTOM")) {
                                         if (floatRectInfo != null) {
                                             floatRectInfo.bottom = Integer.parseInt(kv[1]);
+                                            floatRectInfo.valid = true;
                                             System.out.println("floatRectInfo.bottom:" + floatRectInfo.bottom);
                                         }
+                                    } else if (kv[0].equals("ROTATION")) {
+                                        remoteDeviceInfo.orientation = Integer.parseInt(kv[1]);
+                                        System.out.println("rotation:" + remoteDeviceInfo.orientation);
                                     }
                                 }
                             }
                         }
-                    } else if (line.contains("BTN_TOUCH")) {
-                        if (line.contains("UP")) {
-                            recvDown = false;
-                            inject(MotionEvent.ACTION_UP, xy[0], xy[1]);
-                        } else if (line.contains("DOWN")) {
-                            recvDown = true;
-                            inject(MotionEvent.ACTION_DOWN, xy[0], xy[1]);
-                            move();
+                    } else if (!LOCAL_PLAYBACK && line.startsWith("EDITVIEW_CHANGED ")) {
+                        // TODO 需要确保输入法已经被调起了
+                        String[] splited = line.substring("EDITVIEW_CHANGED ".length()).split(";");
+                        for (String s : splited) {
+                            String[] kv = s.split(":");
+                            if (kv.length == 2) {
+                                if (kv[0].equals("TEXT")) {
+                                    if (editViewText != null) {
+                                        for (int i = 0; i < editViewText.length(); i++) {
+                                            sendKeyEvent(KeyEvent.KEYCODE_DEL);
+                                        }
+                                    }
+
+                                    editViewText = kv[1];
+                                    if (editViewText != null && editViewText.length() > 2) {
+                                        editViewText = editViewText.substring(1, editViewText.length() - 1);
+                                        System.out.println("text:" + editViewText);
+                                        sendTextEvent(editViewText);
+                                    }
+                                }
+                            }
                         }
-                    } else if (line.contains("ABS_MT_POSITION_X")) {
-                        String[] splited = line.split("ABS_MT_POSITION_X");
-                        String x = splited[splited.length - 1].trim();
-                        xy[0] = (int) (Integer.parseInt(x, 16) * xRate);
-
-                        waitForXY[0] = false;
-
-                        if (recvDown) {
-                            move();
-                        }
-                    } else if (line.contains("ABS_MT_POSITION_Y")) {
-                        String[] splited = line.split("ABS_MT_POSITION_Y");
-                        String y = splited[splited.length - 1].trim();
-                        xy[1] = (int) (Integer.parseInt(y, 16) * yRate);
-
-                        waitForXY[1] = false;
-
-                        if (recvDown) {
-                            move();
+                    } else if (line.startsWith("IDENTIFICATIONCODE ")) {
+                        String targetAndroidId = line.substring("IDENTIFICATIONCODE ANDROIDID:".length());
+                        System.out.println("ANDROID_ID:" + ANDROID_ID + ", targetAndroidId:" + targetAndroidId);
+                        if (targetAndroidId.equals(ANDROID_ID)) {
+                            LOCAL_PLAYBACK = true;
                         }
                     }
                 }
             } catch (Exception e) {
-                System.out.println("socket exception:" + e);
+                e.printStackTrace();
             } finally {
                 try {
                     if (socket != null) {
@@ -292,8 +378,17 @@ public class ScreenEventInjector {
                 inject(MotionEvent.ACTION_MOVE, xy[0], xy[1]);
 
                 // 接收下一次事件
-                waitForXY[0] = true;
-                waitForXY[1] = true;
+                waitForXY[0] = waitForXY[1] = true;
+            }
+        }
+
+        private void down() {
+            if (!waitForXY[0] && !waitForXY[1]) {
+                inject(MotionEvent.ACTION_DOWN, xy[0], xy[1]);
+
+                // 接收下一次事件
+                waitForXY[0] = waitForXY[1] = true;
+                downStatus = DownStatus.DOWN_STATUS_SEND;
             }
         }
 
@@ -316,54 +411,85 @@ public class ScreenEventInjector {
             return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
         }
 
-        public void inject(int action, int x, int y) {
+        public void inject(int action, int intX, int intY) {
             // src 1200x1920 dst 1080x2160 1200x2000
-            if (deviceInfo.orientation == 1) {
-                int tmp = y;
-                y = deviceInfo.width - x;
+
+            float x = (float) intX * xRate;
+            float y = (float) intY * yRate;
+
+            if (remoteDeviceInfo.orientation == 1) {
+                float tmp = y;
+                y = remoteDeviceInfo.width - x;
                 x = tmp;
             }
-
             System.out.println("x0:" + x + ", y0:" + y);
-            x = (x*selfWidth)/targetFloatRectInfo.right;
-            y = (y*selfHeight)/targetFloatRectInfo.bottom;
-            System.out.println("x:" + x + ", y:" + y);
 
-            if (targetFloatRectInfo.left > x
-                || x > targetFloatRectInfo.right
-                || targetFloatRectInfo.top > y
-                || y > targetFloatRectInfo.bottom) {
+            // 必须在target内
+            if (remoteTargetFRI.valid
+                    && (remoteTargetFRI.left > x
+                    || x > remoteTargetFRI.right
+                    || remoteTargetFRI.top > y
+                    || y > remoteTargetFRI.bottom)) {
                 System.out.println("not in target rect");
                 return;
             }
 
-            if (toolFloatRectInfo.left <= x
-                && x <= toolFloatRectInfo.right
-                && toolFloatRectInfo.top <= y
-                && y <= toolFloatRectInfo.bottom) {
-                System.out.println("in tool rect:" + toolFloatRectInfo.toString());
-                return;
+            if (LOCAL_PLAYBACK) {
+                // 单机模式时不能在tool内
+                if (remoteToolFRI.valid
+                        && remoteToolFRI.left <= x
+                        && x <= remoteToolFRI.right
+                        && remoteToolFRI.top <= y
+                        && y <= remoteToolFRI.bottom) {
+                    System.out.println("in tool rect:" + remoteToolFRI.toString());
+                    return;
+                }
+            } else {
+                // 主从模式时不能在target inputmethod内
+                if (remoteInputmethodFRI.valid
+                        && remoteInputmethodFRI.left <= x
+                        && x <= remoteInputmethodFRI.right
+                        && remoteInputmethodFRI.top <= y
+                        && y <= remoteInputmethodFRI.bottom) {
+                    System.out.println("in target inputmethod rect:" + remoteInputmethodFRI.toString());
+                    return;
+                }
+
+                // 主从模式时不能在导航栏内
+                if (remoteNavigationFRI.valid
+                        && remoteNavigationFRI.left <= x
+                        && x <= remoteNavigationFRI.right
+                        && remoteNavigationFRI.top <= y
+                        && y <= remoteNavigationFRI.bottom) {
+                    System.out.println("in navigation rect:" + remoteNavigationFRI.toString());
+                    return;
+                }
+
+                if (remoteNavigationFRI.valid
+                        && (remoteNavigationFRI.right - remoteNavigationFRI.left) == remoteDeviceInfo.width
+                        && (remoteNavigationFRI.bottom - remoteNavigationFRI.top) == remoteDeviceInfo.navigation_bar_height) {
+                    x = (x*selfWidth)/remoteDeviceInfo.width;
+                    y = (y*(selfHeight - NAVIGATION_BAR_HEIGHT))/(remoteDeviceInfo.height - remoteDeviceInfo.navigation_bar_height);
+                } else {
+                    x = (x*(selfWidth - NAVIGATION_BAR_HEIGHT))/(remoteDeviceInfo.width - remoteDeviceInfo.navigation_bar_height);
+                    y = (y*selfHeight)/remoteDeviceInfo.height;
+                }
+
+                // 主从模式时不能在自己输入法内
+                if (selfInputmethodFRI.valid
+                        && selfInputmethodFRI.left <= x
+                        && x <= selfInputmethodFRI.right
+                        && selfInputmethodFRI.top <= y
+                        && y <= selfInputmethodFRI.bottom) {
+                    System.out.println("in self inputmethod rect:" + selfInputmethodFRI.toString());
+                    return;
+                }
             }
 
-            if (navigationFloatRectInfo.left <= x
-                && x <= navigationFloatRectInfo.right
-                && navigationFloatRectInfo.top <= y
-                && y <= navigationFloatRectInfo.bottom) {
-                System.out.println("in navigation rect:" + navigationFloatRectInfo.toString());
-                return;
-            }
-
-            if (inputmethodFloatRectInfo.left <= x
-                && x <= inputmethodFloatRectInfo.right
-                && inputmethodFloatRectInfo.top <= y
-                && y <= inputmethodFloatRectInfo.bottom) {
-                System.out.println("in inputmethod rect:" + inputmethodFloatRectInfo.toString());
-                return;
-            }
+            System.out.println("x:" + x + ", y:" + y);
 
             long now = SystemClock.uptimeMillis();
 
-            // Physical size: 1200x1920
             pointerCoords[0].x = x;
             pointerCoords[0].y = y;
             pointerCoords[0].pressure = action == MotionEvent.ACTION_UP ? 0.0f : 1.0f;
@@ -372,12 +498,72 @@ public class ScreenEventInjector {
             }
 
             MotionEvent event = MotionEvent.obtain(lastTouchDown, now, action, pointerCount, pointerProperties, pointerCoords, 0, 0, 1.0f, 1.0f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
-            if (deviceInfo.display_id > 0) {
-                InputManager.setDisplayId(event, deviceInfo.display_id);
+            if (remoteDeviceInfo.display_id > 0) {
+                InputManager.setDisplayId(event, remoteDeviceInfo.display_id);
             }
 
             InputManager.getInputManager().injectInputEvent(event);
             System.out.println("injectInputEvent:" + event);
+
+            if (action == MotionEvent.ACTION_DOWN) {
+                event = MotionEvent.obtain(lastTouchDown, now, MotionEvent.ACTION_MOVE, pointerCount, pointerProperties, pointerCoords, 0, 0, 1.0f, 1.0f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
+                if (remoteDeviceInfo.display_id > 0) {
+                    InputManager.setDisplayId(event, remoteDeviceInfo.display_id);
+                }
+
+                InputManager.getInputManager().injectInputEvent(event);
+                System.out.println("injectInputEvent:" + event);
+            }
+        }
+
+        private void sendTextEvent(final String text) {
+            final StringBuilder buff = new StringBuilder(text);
+            boolean escapeFlag = false;
+            for (int i = 0; i < buff.length(); i++) {
+                if (escapeFlag) {
+                    escapeFlag = false;
+                    if (buff.charAt(i) == 's') {
+                        buff.setCharAt(i, ' ');
+                        buff.deleteCharAt(--i);
+                    }
+                }
+                if (buff.charAt(i) == '%') {
+                    escapeFlag = true;
+                }
+            }
+
+            final char[] chars = buff.toString().toCharArray();
+            final KeyCharacterMap kcm = KeyCharacterMap.load(KeyCharacterMap.VIRTUAL_KEYBOARD);
+            final KeyEvent[] events = kcm.getEvents(chars);
+            for (int i = 0; i < events.length; i++) {
+                KeyEvent e = events[i];
+                if (InputDevice.SOURCE_KEYBOARD != e.getSource()) {
+                    e.setSource(InputDevice.SOURCE_KEYBOARD);
+                }
+
+                if (remoteDeviceInfo.display_id > 0) {
+                    InputManager.setDisplayId(e, remoteDeviceInfo.display_id);
+                }
+
+                InputManager.getInputManager().injectInputEvent(e);
+                System.out.println("injectInputEvent:" + e);
+            }
+        }
+
+        private void sendKeyEvent(int keyCode) {
+            final long now = SystemClock.uptimeMillis();
+
+            KeyEvent event = new KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0 /* repeatCount */,
+                    0 /*metaState*/, KeyCharacterMap.VIRTUAL_KEYBOARD, 0 /*scancode*/, 0 /*flags*/,
+                    InputDevice.SOURCE_KEYBOARD);
+
+            if (remoteDeviceInfo.display_id > 0) {
+                InputManager.setDisplayId(event, remoteDeviceInfo.display_id);
+            }
+
+            InputManager.getInputManager().injectInputEvent(event);
+            System.out.println("injectInputEvent:" + event);
+            InputManager.getInputManager().injectInputEvent(KeyEvent.changeAction(event, KeyEvent.ACTION_UP));
         }
     }
 }

@@ -5,10 +5,15 @@ import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.graphics.Rect;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
+import android.util.DisplayMetrics;
 import android.util.Log;
+import android.view.Display;
 import android.view.View;
+import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Toast;
 
@@ -17,7 +22,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.text.Collator;
@@ -32,14 +36,37 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 
 public class Utils {
-    private static String TAG = "MasterActivity";
-
+    private static String TAG = "Utils";
+    private static Context mContext;
     public static int APP_CHANNEL_PORT = 8404;
     public static int JAR_CHANNEL_PORT = 8405;
     private static final BlockingQueue<String> mBlockingQueue = new ArrayBlockingQueue<>(128);
     private static final Handler mHandler = new Handler(Looper.getMainLooper());
     private static String mTargetAppPackageName;
-    private static int mNavigationBarHeight;
+    private static int mNavigationBarHeight = 0;
+    private static int mScreenWidth = 0;
+    private static int mScreenHeight = 0;
+    public static void setContext(Context context) {
+        mContext = context;
+
+        WindowManager manger = (WindowManager)context.getSystemService(
+                Context.WINDOW_SERVICE);
+        Display defaultDisplay = manger.getDefaultDisplay();
+        DisplayMetrics displayMetrics = new DisplayMetrics();
+        defaultDisplay.getRealMetrics(displayMetrics);
+
+        mScreenWidth = displayMetrics.widthPixels;
+        mScreenHeight = displayMetrics.heightPixels;
+    }
+    public static Context getContext() {
+        return mContext;
+    }
+    public static int getScreenWidth() {
+        return mScreenWidth;
+    }
+    public static int getScreenHeight() {
+        return mScreenHeight;
+    }
     public static BlockingQueue<String> getBlockingQueue() {
         return mBlockingQueue;
     }
@@ -54,7 +81,6 @@ public class Utils {
 
     public static void setNavigationBarHeight(int navigationBarHeight) {
         mNavigationBarHeight = navigationBarHeight;
-
     }
     public static int getNavigationBarHeight() {
         return mNavigationBarHeight;
@@ -137,7 +163,7 @@ public class Utils {
             Intent intent = new Intent(Intent.ACTION_MAIN);
             intent.addCategory(Intent.CATEGORY_LAUNCHER);
             intent.setPackage(packageName);
-            List<ResolveInfo> resolveInfos = DemoApplication.getApp().getPackageManager().queryIntentActivities(intent, 0);
+            List<ResolveInfo> resolveInfos = Utils.getContext().getPackageManager().queryIntentActivities(intent, 0);
             if (resolveInfos != null && !resolveInfos.isEmpty()) {
                 // 多Launcher情景
                 for (ResolveInfo resolveInfo : resolveInfos) {
@@ -152,11 +178,11 @@ public class Utils {
 
     public static List<ApplicationInfo> loadApplicationList() {
         // 后台加载下应用列表
-        List<ApplicationInfo> listPack = DemoApplication.getApp().getPackageManager().getInstalledApplications(PackageManager.GET_META_DATA);
+        List<ApplicationInfo> listPack = Utils.getContext().getPackageManager().getInstalledApplications(PackageManager.GET_META_DATA);
 
         List<ApplicationInfo> removedItems = new ArrayList<>();
 
-        String selfPackage = DemoApplication.getApp().getPackageName();
+        String selfPackage = Utils.getContext().getPackageName();
 
         for (ApplicationInfo pack: listPack) {
             if ((pack.flags & ApplicationInfo.FLAG_SYSTEM) != 0) {
@@ -172,8 +198,8 @@ public class Utils {
         Collections.sort(listPack, new Comparator<ApplicationInfo>() {
             @Override
             public int compare(ApplicationInfo o1, ApplicationInfo o2) {
-                String n1 = o1.loadLabel(DemoApplication.getApp().getPackageManager()).toString();
-                String n2 = o2.loadLabel(DemoApplication.getApp().getPackageManager()).toString();
+                String n1 = o1.loadLabel(Utils.getContext().getPackageManager()).toString();
+                String n2 = o2.loadLabel(Utils.getContext().getPackageManager()).toString();
                 return c.compare(n1, n2);
             }
         });
@@ -187,13 +213,15 @@ public class Utils {
         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show();
     }
 
-    public static void startJar(String wlanAddress) {
+    public static void startJar(String wlanAddress, String externalpath) {
         String cmd = "ps -ef|grep com.masterslavefollow.demo.jar.ScreenEventInjector | grep -v grep | awk '{print $2}' | xargs kill -9";
-        System.out.println("cmd:" + cmd);
+        Log.i(TAG, "cmd:" + cmd);
         AdbShell.getInstance().execute(cmd);
 
-        String jarPath = DemoApplication.getApp().getPackageCodePath();
-        System.out.println("jarPath:" + jarPath);
+        String jarPath = Utils.getContext().getPackageCodePath();
+        Log.i(TAG, "jarPath:" + jarPath);
+        String androidId = Settings.Secure.getString(Utils.getContext().getContentResolver(), Settings.Secure.ANDROID_ID);
+        Log.i(TAG, "androidId:" + androidId);
 
         StringBuilder sb = new StringBuilder();
         sb.append("CLASSPATH=");
@@ -202,12 +230,16 @@ public class Utils {
         sb.append(" ");
         sb.append(wlanAddress);
         sb.append(" ");
+        sb.append(externalpath);
+        sb.append(" ");
         sb.append(JAR_CHANNEL_PORT);
         sb.append(" ");
         sb.append(mNavigationBarHeight);
+        sb.append(" ");
+        sb.append(androidId);
 
         cmd = sb.toString();
-        System.out.println("cmd:" + cmd);
+        Log.i(TAG, "cmd:" + cmd);
 
         AdbShell.getInstance().executeWithBlockingQueue(cmd, null);
     }
@@ -377,7 +409,7 @@ public class Utils {
                         deviceInfo.width = height;
                         deviceInfo.height = width;
                     }
-
+                    deviceInfo.navigation_bar_height = mNavigationBarHeight;
                     Log.i(TAG, "width:" + deviceInfo.width + " height:" + deviceInfo.height);
 
                     if (deviceInfo.width <= 0 || deviceInfo.height <= 0) {
@@ -394,6 +426,9 @@ public class Utils {
         }
 
         List<String> selfMessage = new ArrayList<>();
+        String androidId = Settings.Secure.getString(Utils.getContext().getContentResolver(), Settings.Secure.ANDROID_ID);
+        Log.i(TAG, "androidId:" + androidId);
+        selfMessage.add("IDENTIFICATIONCODE ANDROIDID:" + androidId);
         for (ScreenEventTracker.DeviceInfo info : deviceInfoList) {
             if (info.display_id >= 0 && info.width > 0 && info.height > 0) {
                 Log.i(TAG, "deviceInfo:" + info.toString());
@@ -402,5 +437,15 @@ public class Utils {
         }
 
         return selfMessage;
+    }
+
+    static boolean isNavigationBar(Rect rect) {
+        if ((mScreenWidth == rect.width() && mNavigationBarHeight == rect.height())
+            || (mScreenHeight == rect.height() && mNavigationBarHeight == rect.width())
+            || (mScreenWidth == rect.height() && mNavigationBarHeight == rect.width())
+            || (mScreenHeight == rect.width() && mNavigationBarHeight == rect.height())) {
+            return true;
+        }
+        return false;
     }
 }

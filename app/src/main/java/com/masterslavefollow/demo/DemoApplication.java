@@ -2,16 +2,10 @@ package com.masterslavefollow.demo;
 
 import android.app.Application;
 import android.content.Context;
-import android.os.Build;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
-
-import org.lsposed.hiddenapibypass.HiddenApiBypass;
 
 public class DemoApplication extends Application {
     private static String TAG = "DemoApplication";
-    private static DemoApplication mApp;
     public DemoApplication() {
         super();
 
@@ -30,10 +24,6 @@ public class DemoApplication extends Application {
         super.attachBaseContext(base);
 
         Log.i(TAG, "attachBaseContext");
-        mApp = this;
-    }
-
-    public static DemoApplication getApp() {
-        return mApp;
+        Utils.setContext(base);
     }
 }

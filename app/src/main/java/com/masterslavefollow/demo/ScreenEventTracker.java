@@ -58,6 +58,7 @@ public class ScreenEventTracker {
         public int height = -1;
         public int orientation = -1;
         public int display_id = -1;
+        public int navigation_bar_height = -1;
 
         @Override
         public String toString() {
@@ -67,9 +68,10 @@ public class ScreenEventTracker {
                 + ";ABS_X:" + abs_x
                 + ";ABS_Y:" + abs_y
                 + ";WIDTH:" + width
-                + ";HEIGTH:" + height
+                + ";HEIGHT:" + height
                 + ";ORIENTATION:" + orientation
-                + ";DISPLAY_ID:" + display_id;
+                + ";DISPLAY_ID:" + display_id
+                + ";NAVIGATION_BAR_HEIGHT:" + navigation_bar_height;
         }
     }
 
@@ -114,7 +116,6 @@ public class ScreenEventTracker {
                             byteBuffer.put(event.getBytes("UTF-8"));
                             byteBuffer.flip();
 
-                            Log.i(TAG, "byteBuffer:" + byteBuffer);
                             mJarChannelList.get(i).getOutputStream().write(byteBuffer.array(), 0, byteBuffer.limit());
                             mJarChannelList.get(i).getOutputStream().flush();
                         } catch (Exception e) {
@@ -164,7 +165,7 @@ public class ScreenEventTracker {
                         mJarChannelList.add(socket);
 
                         if (mRunnable != null) {
-                            mRunnable.run();
+                            Utils.runOnUiThread(mRunnable);
                         }
                     }
                 }
@@ -243,7 +244,7 @@ public class ScreenEventTracker {
                                             mFailCount++;
 
                                             if (mRunnable != null) {
-                                                mRunnable.run();
+                                                Utils.runOnUiThread(mRunnable);
                                             }
                                         }
                                     } else {

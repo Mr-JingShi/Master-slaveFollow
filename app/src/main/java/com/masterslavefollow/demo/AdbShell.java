@@ -59,10 +59,8 @@ public class AdbShell {
     public boolean connect(int port) {
         Future<?> future = mExecutors.submit(() -> {
             try {
-                AbsAdbConnectionManager manager = AdbManager.getInstance(DemoApplication.getApp());
-                Log.i(TAG, "connect ip:" + AndroidUtils.getHostIpAddress(DemoApplication.getApp()));
-                mConnectSatus = manager.connect(AndroidUtils.getHostIpAddress(DemoApplication.getApp()), port);
-                Log.i(TAG, "connect mConnectSatus:" + mConnectSatus);
+                AbsAdbConnectionManager manager = AdbManager.getInstance(Utils.getContext());
+                mConnectSatus = manager.connect(AndroidUtils.getHostIpAddress(Utils.getContext()), port);
             } catch (Throwable th) {
                 mConnectSatus = false;
                 th.printStackTrace();
@@ -82,7 +80,7 @@ public class AdbShell {
     public void disconnect() {
         mExecutors.submit(() -> {
             try {
-                AbsAdbConnectionManager manager = AdbManager.getInstance(DemoApplication.getApp());
+                AbsAdbConnectionManager manager = AdbManager.getInstance(Utils.getContext());
                 manager.disconnect();
                 manager.close();
             } catch (Throwable th) {
@@ -98,7 +96,7 @@ public class AdbShell {
             AtomicInteger atomicPort = new AtomicInteger(-1);
             CountDownLatch resolveHostAndPort = new CountDownLatch(1);
 
-            AdbMdns adbMdns = new AdbMdns(DemoApplication.getApp(), AdbMdns.SERVICE_TYPE_TLS_PAIRING, (hostAddress, port) -> {
+            AdbMdns adbMdns = new AdbMdns(Utils.getContext(), AdbMdns.SERVICE_TYPE_TLS_PAIRING, (hostAddress, port) -> {
                 mHostAddress = hostAddress.getHostAddress();
 
                 Log.i(TAG, "hostAddress:" + mHostAddress + " port:" + port);
@@ -125,12 +123,12 @@ public class AdbShell {
     public boolean pair(int port, String pairingCode) {
         Future<?> future = mExecutors.submit(() -> {
             try {
-                AbsAdbConnectionManager manager = AdbManager.getInstance(DemoApplication.getApp());
+                AbsAdbConnectionManager manager = AdbManager.getInstance(Utils.getContext());
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    mConnectSatus = manager.pair(AndroidUtils.getHostIpAddress(DemoApplication.getApp()), port, pairingCode);
+                    mConnectSatus = manager.pair(AndroidUtils.getHostIpAddress(Utils.getContext()), port, pairingCode);
 
                     if (mConnectSatus) {
-                        mConnectSatus = manager.autoConnect(DemoApplication.getApp(), 5000);
+                        mConnectSatus = manager.autoConnect(Utils.getContext(), 5000);
                     }
                 }
             } catch (Throwable th) {
@@ -156,7 +154,7 @@ public class AdbShell {
     public void execute(String command, List<String> lines) {
         Future<?> future = mExecutors.submit(() -> {
             try {
-                AbsAdbConnectionManager manager = AdbManager.getInstance(DemoApplication.getApp());
+                AbsAdbConnectionManager manager = AdbManager.getInstance(Utils.getContext());
                 try (AdbStream adbStream = manager.openStream(LocalServices.SHELL)) {
                     try (OutputStream os = adbStream.openOutputStream()) {
                         os.write(String.format("%1$s\n", command).getBytes(StandardCharsets.UTF_8));
@@ -212,7 +210,7 @@ public class AdbShell {
         Future<AdbStream> future = mExecutors.submit(() -> {
             AdbStream adbStream = null;
             try {
-                AbsAdbConnectionManager manager = AdbManager.getInstance(DemoApplication.getApp());
+                AbsAdbConnectionManager manager = AdbManager.getInstance(Utils.getContext());
                 adbStream = manager.openStream(LocalServices.SHELL);
                 AdbInputStream adbInputStream = adbStream.openInputStream();
                 new Thread(() -> {

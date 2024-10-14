@@ -46,7 +46,7 @@ final class FloatInputDialog {
         windowParams.width = WindowManager.LayoutParams.WRAP_CONTENT;
         windowParams.height = WindowManager.LayoutParams.WRAP_CONTENT;
 
-        WindowManager windowManager = (WindowManager)DemoApplication.getApp().getSystemService(Context.WINDOW_SERVICE);
+        WindowManager windowManager = (WindowManager)Utils.getContext().getSystemService(Context.WINDOW_SERVICE);
         windowManager.addView(mFloatContent, windowParams);
 
         mFloatContent.findViewById(R.id.pair_button).setOnClickListener((view) -> {
@@ -133,7 +133,7 @@ final class FloatInputDialog {
     private void hide(String msg) {
         mFloatContent.setVisibility(View.GONE);
 
-        Intent intent = new Intent(DemoApplication.getApp(), MainActivity.class);
+        Intent intent = new Intent(Utils.getContext(), MainActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
         if (msg != null && !msg.isEmpty()) {
             intent.putExtra("toast", msg);

@@ -70,7 +70,7 @@ final class RecordingAndPlayBack {
         windowParams.width = WindowManager.LayoutParams.WRAP_CONTENT;
         windowParams.height = WindowManager.LayoutParams.WRAP_CONTENT;
 
-        WindowManager windowManager = (WindowManager)DemoApplication.getApp().getSystemService(Context.WINDOW_SERVICE);
+        WindowManager windowManager = (WindowManager)Utils.getContext().getSystemService(Context.WINDOW_SERVICE);
         windowManager.addView(mFloatContent, windowParams);
 
         mFloatContent.findViewById(R.id.recording_playback).setOnClickListener((View v) -> {
@@ -105,8 +105,8 @@ final class RecordingAndPlayBack {
             hide();
         });
 
-        final int widthPixels = DemoApplication.getApp().getResources().getDisplayMetrics().widthPixels;
-        final int heightPixels = DemoApplication.getApp().getResources().getDisplayMetrics().heightPixels;
+        final int widthPixels = Utils.getContext().getResources().getDisplayMetrics().widthPixels;
+        final int heightPixels = Utils.getContext().getResources().getDisplayMetrics().heightPixels;
 
         mFloatContent.findViewById(R.id.recording_playback_drag).setOnTouchListener((view, event) -> {
             int action = event.getActionMasked();
@@ -126,7 +126,7 @@ final class RecordingAndPlayBack {
                 windowParams.x = (int)x;
                 windowParams.y = (int)y;
 
-                Log.i(TAG, "x: " + x + " y: " + y);
+                // Log.i(TAG, "x: " + x + " y: " + y);
 
                 windowManager.updateViewLayout(mFloatContent, windowParams);
             }
@@ -173,7 +173,7 @@ final class RecordingAndPlayBack {
     public void hide() {
         mFloatContent.setVisibility(View.GONE);
 
-        Intent intent = new Intent(DemoApplication.getApp(), MasterActivity.class);
+        Intent intent = new Intent(Utils.getContext(), MasterActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
         intent.putExtra("from", "RecordingAndPlayBack");
         mMasterActivity.startActivity(intent);
@@ -194,7 +194,7 @@ final class RecordingAndPlayBack {
         if (!mJarStarted) {
             mJarStarted = true;
 
-            Utils.startJar("127.0.0.1");
+            Utils.startJar("127.0.0.1", mMasterActivity.getExternalFilesDir(null).getAbsolutePath());
         }
     }
 
@@ -300,13 +300,13 @@ final class RecordingAndPlayBack {
                             continue;
                         }
 
-                        InputStream inputStream1 = new FileInputStream(caseFile);
-                        InputStreamReader inputStreamReader1 = new InputStreamReader(inputStream1);
-                        BufferedReader bufferedReader1 = new BufferedReader(inputStreamReader1);
+                        InputStream is = new FileInputStream(caseFile);
+                        InputStreamReader isr = new InputStreamReader(is);
+                        BufferedReader br = new BufferedReader(isr);
 
                         long lastTime = 0;
                         long currentTime = 0;
-                        while (mPlaybackWorking && (line = bufferedReader1.readLine()) != null) {
+                        while (mPlaybackWorking && (line = br.readLine()) != null) {
                             if ((currentTime = getEventMicroSecond(line)) > 0) {
                                 if (lastTime == 0) {
                                     lastTime = currentTime;
@@ -327,7 +327,7 @@ final class RecordingAndPlayBack {
                             socket.getOutputStream().flush();
                         }
 
-                        inputStream1.close();
+                        is.close();
                     }
 
                     inputStream.close();
@@ -341,7 +341,7 @@ final class RecordingAndPlayBack {
                     }
                 }
             } catch (Exception e) {
-                Log.i(TAG, "catch Exception:" + e);
+                e.printStackTrace();
             }
         }
 
@@ -353,7 +353,7 @@ final class RecordingAndPlayBack {
                     return Long.parseLong(content.trim());
                 }
             } catch (Exception e) {
-                Log.i(TAG, "catch Exception:" + e);
+                e.printStackTrace();
             }
             return 0;
         }

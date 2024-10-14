@@ -34,33 +34,23 @@ public class MainActivity extends AppCompatActivity {
             findViewById(R.id.adb_pair).setVisibility(View.GONE);
         }
 
-        String portString = getPort();
-        Log.i(TAG, "portString:" + portString);
-        if (portString != null && !portString.isEmpty() && TextUtils.isDigitsOnly(portString)) {
-            AdbShell.getInstance().connect(Integer.parseInt(portString));
-        }
-
         if (!hasPermission()) {
             Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName()));
             startActivityForResult(intent, REQUEST_CODE);
         }
 
-        Log.i(TAG, "MainActivity end");
-
-        int rd = getResources().getIdentifier("navigation_bar_height", "dimen", "android");
-        if (rd > 0) {
-            Log.i(TAG, "navigation_bar_height:" + getResources().getDimensionPixelSize(rd));
-        }
-        rd = getResources().getIdentifier("status_bar_height", "dimen", "android");
-        if (rd > 0) {
-            Log.i(TAG, "status_bar_height:" + getResources().getDimensionPixelSize(rd));
-        }
         getWindow().getDecorView().setOnApplyWindowInsetsListener((v, insets) -> {
             Log.i(TAG, "onApplyWindowInsetsListener:" + insets);
-            Log.i(TAG, "getStableInsetTop:" + insets.getStableInsetTop());
-            Log.i(TAG, "getStableInsetBottom:" + insets.getStableInsetBottom());
-
-            Utils.setNavigationBarHeight(insets.getStableInsetBottom());
+            Log.i(TAG, "Top:" + insets.getStableInsetTop() + " Left:" + insets.getStableInsetLeft() + " Right:" + insets.getStableInsetRight() + " Bottom:" + insets.getStableInsetBottom());
+            int navigationBarHeight = insets.getStableInsetBottom();
+            if (navigationBarHeight == 0) {
+                navigationBarHeight = insets.getStableInsetLeft();
+                if (navigationBarHeight == 0) {
+                    navigationBarHeight = insets.getStableInsetRight();
+                }
+            }
+            Log.i(TAG, "navigationBarHeight:" + navigationBarHeight);
+            Utils.setNavigationBarHeight(navigationBarHeight);
             return insets;
         });
     }
@@ -76,10 +66,6 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         Log.i(TAG, "MainActivity onResume");
-
-        if (AdbShell.getInstance().getConnectStatus()) {
-            adb_gone();
-        }
     }
 
     @Override

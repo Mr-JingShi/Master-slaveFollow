@@ -1,13 +1,16 @@
 package com.masterslavefollow.demo;
 
+import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -32,15 +35,10 @@ import java.util.List;
 
 public class MasterActivity extends AppCompatActivity {
     private static String TAG = "MasterActivity";
-    private static final String SYSTEM_DIALOG_REASON_KEY = "reason";
-    private static final String SYSTEM_DIALOG_REASON_HOME_KEY = "homekey";
-    private static final String SYSTEM_DIALOG_REASON_RECENTAPPS_KEY = "recentapps";
     private boolean mIsSingleMachineMode;
     private DrawerLayout mDrawerLayout;
     private View mAppListContainer;
     private View mCaseListContainer;
-    private ListView mAppListView;
-    private ListView mCaseListView;
     private AppAdapter mAppAdapter;
     private CaseAdapter mCaseAdapter;
     private ApplicationInfo mCurrentApp;
@@ -48,7 +46,7 @@ public class MasterActivity extends AppCompatActivity {
     private TextView mAppLabel;
     private TextView mAppPkgName;
     private List<ApplicationInfo> mListPack;
-    private List<String> mListCase;
+    private List<String> mListCases;
     private String mExternalCaseDir;
     private boolean mSupportKeyboard;
     private boolean mSupportNavigation;
@@ -72,37 +70,48 @@ public class MasterActivity extends AppCompatActivity {
         mDrawerLayout = findViewById(R.id.drawer_layout);
         mDrawerLayout.setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED);
         mDrawerLayout.setScrimColor(Color.TRANSPARENT);
-        mDrawerLayout.setDrawerListener(new DrawerLayout.DrawerListener() {
-            @Override
-            public void onDrawerSlide(View drawerView, float slideOffset) {}
-            @Override
-            public void onDrawerOpened(View drawerView) {}
-            @Override
-            public void onDrawerClosed(View drawerView) {
-                Log.i(TAG, "onDrawerClosed");
-                updateCasesView();
-            }
-            @Override
-            public void onDrawerStateChanged(int newState) {}
-        });
+        if (mIsSingleMachineMode) {
+            mDrawerLayout.setDrawerListener(new DrawerLayout.DrawerListener() {
+                @Override
+                public void onDrawerSlide(View drawerView, float slideOffset) {
+                }
+
+                @Override
+                public void onDrawerOpened(View drawerView) {
+                }
+
+                @Override
+                public void onDrawerClosed(View drawerView) {
+                    Log.i(TAG, "onDrawerClosed");
+                    updateCasesView();
+                }
+
+                @Override
+                public void onDrawerStateChanged(int newState) {
+                }
+            });
+        }
         mAppListContainer = findViewById(R.id.app_list_container);
         mCaseListContainer = findViewById(R.id.case_list_container);
 
-        mAppListView = findViewById(R.id.app_list);
-        mAppListView.setOnItemClickListener((AdapterView<?> parent, View view, int position, long id) -> {
+        ListView appListView = findViewById(R.id.app_list);
+        appListView.setOnItemClickListener((AdapterView<?> parent, View view, int position, long id) -> {
             Log.i(TAG, "setOnItemClickListener position:" + position);
 
             mDrawerLayout.closeDrawer(mAppListContainer);
 
-            mCurrentApp = (ApplicationInfo) mAppAdapter.getItem(position);
+            ApplicationInfo app = (ApplicationInfo) mAppAdapter.getItem(position);
+            if (!app.packageName.equals(mCurrentApp.packageName)) {
+                mCurrentApp = app;
 
-            updateHeadView();
-            updateCaseView();
+                updateHeadView();
+                if (mIsSingleMachineMode) {
+                    updateCaseView();
+                }
 
-            PrivatePreferences.putString("float_app", mCurrentApp.loadLabel(getPackageManager()) + "##" + mCurrentApp.packageName);
+                PrivatePreferences.putString("float_app", mCurrentApp.loadLabel(getPackageManager()) + "##" + mCurrentApp.packageName);
+            }
         });
-
-        mCaseListView = findViewById(R.id.case_list);
 
         mListPack = Utils.loadApplicationList();
 
@@ -125,11 +134,14 @@ public class MasterActivity extends AppCompatActivity {
         mCurrentApp = mListPack.get(position);
 
         mAppAdapter = new AppAdapter();
-        mAppListView.setAdapter(mAppAdapter);
+        appListView.setAdapter(mAppAdapter);
 
-        updateCaseView();
-        mCaseAdapter = new CaseAdapter();
-        mCaseListView.setAdapter(mCaseAdapter);
+        if (mIsSingleMachineMode) {
+            updateCaseView();
+            mCaseAdapter = new CaseAdapter();
+            ListView caseListVIew = findViewById(R.id.case_list);
+            caseListVIew.setAdapter(mCaseAdapter);
+        }
 
         mAppIcon = findViewById(R.id.target_app_icon);
         mAppIcon.setOnClickListener((View v) -> {
@@ -195,7 +207,6 @@ public class MasterActivity extends AppCompatActivity {
         RadioButton playbackButton = findViewById(R.id.playback_radio);
         playbackButton.setOnClickListener((View v) -> {
             caseName.setVisibility(View.GONE);
-            updateCaseView();
             mDrawerLayout.openDrawer(mCaseListContainer);
         });
 
@@ -225,11 +236,9 @@ public class MasterActivity extends AppCompatActivity {
 
             if (mScreenEventTracker == null) {
                 mScreenEventTracker = new ScreenEventTracker(() -> {
-                    runOnUiThread(() -> {
-                        int successCount = mScreenEventTracker.getSuccessCount();
-                        int failCount = mScreenEventTracker.getFailCount();
-                        slaveStatus.setText("从设备连接数：" + successCount + "-" + failCount);
-                    });
+                    int successCount = mScreenEventTracker.getSuccessCount();
+                    int failCount = mScreenEventTracker.getFailCount();
+                    slaveStatus.setText("从设备连接数：" + successCount + "-" + failCount);
                 });
             }
             mScreenEventTracker.createChannel(config);
@@ -257,7 +266,8 @@ public class MasterActivity extends AppCompatActivity {
                             Utils.toast(MasterActivity.this, "用例已存在，请重新填写");
                             return;
                         } else {
-                            MyAccessibilityService.open();
+                            Utils.getBlockingQueue().clear();
+                            MyAccessibilityService.open(false);
 
                             mRecordingAndPlayBack.setRecordingFileName(fileName);
                         }
@@ -278,14 +288,11 @@ public class MasterActivity extends AppCompatActivity {
                         FileOutputStream outputStream = new FileOutputStream(playbackFile);
 
                         for (String selectedCase : selectedCases) {
-                            outputStream.write(mExternalCaseDir.getBytes());
                             outputStream.write(selectedCase.getBytes());
                             outputStream.write("\n".getBytes());
                         }
                         outputStream.flush();
                         outputStream.close();
-
-                        MyAccessibilityService.close();
 
                         mRecordingAndPlayBack.setPlaybackFiles(fileName);
                     } catch (IOException e) {
@@ -304,7 +311,8 @@ public class MasterActivity extends AppCompatActivity {
                 v.setEnabled(false);
             } else {
                 if (mScreenEventTracker.getSuccessCount() > 0) {
-                    MyAccessibilityService.open();
+                    Utils.getBlockingQueue().clear();
+                    MyAccessibilityService.open(false);
 
                     mScreenEventTracker.syncScreenEvent();
                 } else {
@@ -315,22 +323,6 @@ public class MasterActivity extends AppCompatActivity {
 
             Utils.startTargetApp(mCurrentApp.packageName);
         });
-
-
-        registerReceiver(new BroadcastReceiver() {
-                             @Override
-                             public void onReceive(Context context, Intent intent) {
-                                 final String reason = intent.getStringExtra(SYSTEM_DIALOG_REASON_KEY);
-
-                                 Log.i(TAG, "reason:" + reason);
-
-                                 if (SYSTEM_DIALOG_REASON_HOME_KEY.equals(reason)
-                                         || SYSTEM_DIALOG_REASON_RECENTAPPS_KEY.equals(reason)) {
-
-                                 }
-                             }
-                         },
-                new IntentFilter(Intent.ACTION_CLOSE_SYSTEM_DIALOGS));
     }
 
     @Override
@@ -338,14 +330,21 @@ public class MasterActivity extends AppCompatActivity {
         super.onNewIntent(intent);
         if (intent != null) {
             String msg = intent.getStringExtra("from");
-            if (msg != null && msg.equals("RecordingAndPlayBack")) {
+            if (msg != null && msg.equals("RecordingAndPlayBack") && mIsSingleMachineMode) {
+                updateCaseView();
+
                 mAppIcon.setEnabled(true);
                 mAppIcon.setBackgroundResource(0);
 
                 findViewById(R.id.start_button).setEnabled(true);
+
                 findViewById(R.id.case_name).setVisibility(View.GONE);
                 findViewById(R.id.case_names).setVisibility(View.GONE);
+
                 RadioGroup radioGroup = findViewById(R.id.recording_playback);
+                if (radioGroup.getCheckedRadioButtonId() == R.id.recording_radio) {
+                    MyAccessibilityService.close();
+                }
                 radioGroup.clearCheck();
             }
         }
@@ -374,6 +373,10 @@ public class MasterActivity extends AppCompatActivity {
         mAppPkgName.setText(mCurrentApp.packageName);
 
         Utils.setTargetAppPackageName(mCurrentApp.packageName);
+
+        if (mCaseAdapter != null) {
+            mCaseAdapter.getSelectedCases().clear();
+        }
     }
     private void updateCaseView() {
         StringBuilder sb = new StringBuilder();
@@ -388,8 +391,8 @@ public class MasterActivity extends AppCompatActivity {
             caseDirFile.mkdirs();
         }
 
-        mListCase = Utils.getAllFiles(mExternalCaseDir);
-        Log.d(TAG, "mListCase:" + mListCase.size());
+        mListCases = Utils.getAllFiles(mExternalCaseDir);
+        Log.d(TAG, "mListCases:" + mListCases.size());
         if (mCaseAdapter != null) {
             mCaseAdapter.notifyDataSetChanged();
         }
@@ -475,12 +478,12 @@ public class MasterActivity extends AppCompatActivity {
         }
         @Override
         public int getCount() {
-            return mListCase.size();
+            return mListCases.size();
         }
 
         @Override
         public Object getItem(int position) {
-            return mListCase.get(position);
+            return mListCases.get(position);
         }
 
         @Override
@@ -494,31 +497,63 @@ public class MasterActivity extends AppCompatActivity {
             if (convertView == null) {
                 convertView = LayoutInflater.from(MasterActivity.this).inflate(R.layout.item_case_list, parent, false);
                 holder = new ViewHolder();
-                holder.name = convertView.findViewById(R.id.case_name);
-                holder.name.setSelected(true);
-                holder.name.setOnClickListener((View v) -> {
+                holder.radioButton = convertView.findViewById(R.id.case_name);
+                holder.radioButton.setSelected(true);
+                holder.radioButton.setOnClickListener((View v) -> {
                     holder.isChecked = !holder.isChecked;
-                    holder.name.setChecked(holder.isChecked);
+                    holder.radioButton.setChecked(holder.isChecked);
                     if (holder.isChecked) {
-                        mSelectedCases.add(holder.name.getText().toString());
+                        mSelectedCases.add(holder.caseName);
                     } else {
-                        mSelectedCases.remove(holder.name.getText().toString());
+                        mSelectedCases.remove(holder.caseName);
                     }
+                });
+                holder.radioButton.setOnLongClickListener((View v) -> {
+                    AlertDialog.Builder builder = new AlertDialog.Builder(MasterActivity.this);
+
+                    builder.setTitle("删除用例");
+                    builder.setMessage("请选择是否删除用例");
+
+                    builder.setNegativeButton("取消", null);
+                    builder.setPositiveButton("删除", (DialogInterface dialog, int which) -> {
+                        Log.d(TAG, "delete file name:" + holder.caseName);
+                        mListCases.remove(holder.caseName);
+
+                        File file = new File(holder.caseName);
+                        file.delete();
+
+                        mSelectedCases.remove(holder.radioButton.getText().toString());
+                        notifyDataSetChanged();
+
+                        Utils.toast(MasterActivity.this, "删除用例成功");
+                    });
+                    builder.show();
+
+                    return true;
                 });
                 convertView.setTag(holder);
             } else {
                 holder = (ViewHolder) convertView.getTag();
             }
 
-            String name = (String) getItem(position);
-            holder.name.setText(name.substring(name.lastIndexOf("/") + 1));
+            String caseName = (String)getItem(position);
+            holder.caseName = caseName;
+            holder.radioButton.setText(caseName.substring(caseName.lastIndexOf("/") + 1));
+            if (mSelectedCases.contains(caseName)) {
+                holder.isChecked = true;
+                holder.radioButton.setChecked(true);
+            } else {
+                holder.isChecked = false;
+                holder.radioButton.setChecked(false);
+            }
 
             return convertView;
         }
 
         class ViewHolder {
-            RadioButton name;
+            RadioButton radioButton;
             boolean isChecked = false;
+            String caseName;
         }
     }
 }

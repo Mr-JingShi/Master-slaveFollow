@@ -74,7 +74,7 @@ public class SlaveActivity extends AppCompatActivity {
         objectAnimator.setRepeatCount(ObjectAnimator.INFINITE);
         objectAnimator.start();
 
-        Utils.startJar(mWlanAddress);
+        Utils.startJar(mWlanAddress, getExternalFilesDir(null).getAbsolutePath());
     }
 
     private class AppChanelThread extends Thread {
@@ -152,13 +152,12 @@ public class SlaveActivity extends AppCompatActivity {
                             }
                         });
                     } else if (line.startsWith("APP_START")) {
-                        SlaveActivity.this.runOnUiThread(() -> {
-                            Utils.startTargetApp(mPackageName);
-                        });
+                        MyAccessibilityService.open(true);
+                        Utils.startTargetApp(mPackageName);
                     }
                 }
             } catch (Exception e) {
-                System.out.println("socket exception:" + e);
+                e.printStackTrace();
             } finally {
                 try {
                     if (socket != null) {

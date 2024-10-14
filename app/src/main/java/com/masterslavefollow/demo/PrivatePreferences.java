@@ -4,7 +4,7 @@ import android.content.SharedPreferences;
 
 public class PrivatePreferences {
     private static SharedPreferences getSharedPreferences() {
-        return DemoApplication.getApp().getSharedPreferences("Master-slaveFollow", android.content.Context.MODE_PRIVATE);
+        return Utils.getContext().getSharedPreferences("Master-slaveFollow", android.content.Context.MODE_PRIVATE);
     }
 
     public static String getString(String key, String defaultValue) {
