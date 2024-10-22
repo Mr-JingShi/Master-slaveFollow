@@ -146,7 +146,7 @@ public class ScreenEventTracker {
                     serverSocket.setReuseAddress(true);
 
                     serverSocket.bind(new InetSocketAddress(Utils.JAR_CHANNEL_PORT));
-                    Log.i(TAG, "port:" + Utils.JAR_CHANNEL_PORT);
+                    Log.i(TAG, "JarChannel port:" + Utils.JAR_CHANNEL_PORT);
 
                     ByteBuffer byteBuffer = ByteBuffer.allocate(1024);
                     while (!Thread.currentThread().isInterrupted()) {
@@ -198,8 +198,11 @@ public class ScreenEventTracker {
                 ByteBuffer byteBuffer = ByteBuffer.allocate(1024);
 
                 while (!Thread.currentThread().isInterrupted()) {
+                    Log.d(TAG, "App Channel select wait");
                     if (selector.select() != 0) {
+                        Log.d(TAG, "App Channel select");
                         Set keys = selector.selectedKeys();
+                        Log.d(TAG, "App Channel keys:" + keys.size());
                         Iterator iterator = keys.iterator();
 
                         while (iterator.hasNext()) {

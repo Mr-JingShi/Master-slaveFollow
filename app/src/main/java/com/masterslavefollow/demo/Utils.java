@@ -20,6 +20,7 @@ import android.widget.Toast;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
@@ -32,21 +33,21 @@ import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 public class Utils {
     private static String TAG = "Utils";
     private static Context mContext;
-    public static int APP_CHANNEL_PORT = 8404;
-    public static int JAR_CHANNEL_PORT = 8405;
-    private static final BlockingQueue<String> mBlockingQueue = new ArrayBlockingQueue<>(128);
+    public static int APP_CHANNEL_PORT = 8405;
+    public static int JAR_CHANNEL_PORT = 8406;
+    private static final BlockingQueue<String> mBlockingQueue = new LinkedBlockingQueue<>();
     private static final Handler mHandler = new Handler(Looper.getMainLooper());
     private static String mTargetAppPackageName;
     private static int mNavigationBarHeight = 0;
     private static int mScreenWidth = 0;
     private static int mScreenHeight = 0;
-    public static void setContext(Context context) {
+    static void setContext(Context context) {
         mContext = context;
 
         WindowManager manger = (WindowManager)context.getSystemService(
@@ -57,36 +58,29 @@ public class Utils {
 
         mScreenWidth = displayMetrics.widthPixels;
         mScreenHeight = displayMetrics.heightPixels;
+
+        AdbShell.init();
     }
-    public static Context getContext() {
+    static Context getContext() {
         return mContext;
     }
-    public static int getScreenWidth() {
-        return mScreenWidth;
-    }
-    public static int getScreenHeight() {
-        return mScreenHeight;
-    }
-    public static BlockingQueue<String> getBlockingQueue() {
+    static BlockingQueue<String> getBlockingQueue() {
         return mBlockingQueue;
     }
 
-    public static void setTargetAppPackageName(String targetAppPackageName) {
+    static void setTargetAppPackageName(String targetAppPackageName) {
         mTargetAppPackageName = targetAppPackageName;
     }
 
-    public static String getTargetAppPackageName() {
+    static String getTargetAppPackageName() {
         return mTargetAppPackageName;
     }
 
-    public static void setNavigationBarHeight(int navigationBarHeight) {
+    static void setNavigationBarHeight(int navigationBarHeight) {
         mNavigationBarHeight = navigationBarHeight;
     }
-    public static int getNavigationBarHeight() {
-        return mNavigationBarHeight;
-    }
 
-    public static String getWlanAddress() {
+    static String getWlanAddress() {
         String cmd = "ifconfig | grep 'inet ' | grep -v 127.0.0.1 | awk '{print $2}'";
         Process process = null;
         BufferedReader reader = null;
@@ -116,7 +110,7 @@ public class Utils {
         return null;
     }
 
-    public static String getHostAddress() {
+    static String getHostAddress() {
         InetAddress ip = null;
         try {
             Enumeration<NetworkInterface> en_netInterface = NetworkInterface.getNetworkInterfaces();
@@ -149,7 +143,7 @@ public class Utils {
         return ip.getHostAddress();
     }
 
-    public static void startTargetApp(final String packageName) {
+    static void startTargetApp(final String packageName) {
         //先强制关闭后开启
         new Thread(() -> {
             AdbShell.getInstance().execute("am force-stop " + packageName);
@@ -176,7 +170,7 @@ public class Utils {
         }).start();
     }
 
-    public static List<ApplicationInfo> loadApplicationList() {
+    static List<ApplicationInfo> loadApplicationList() {
         // 后台加载下应用列表
         List<ApplicationInfo> listPack = Utils.getContext().getPackageManager().getInstalledApplications(PackageManager.GET_META_DATA);
 
@@ -209,11 +203,11 @@ public class Utils {
         return listPack;
     }
 
-    public static void toast(Context context, String msg) {
+    static void toast(Context context, String msg) {
         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show();
     }
 
-    public static void startJar(String wlanAddress, String externalpath) {
+    static void startJar(String wlanAddress, String externalpath) {
         String cmd = "ps -ef|grep com.masterslavefollow.demo.jar.ScreenEventInjector | grep -v grep | awk '{print $2}' | xargs kill -9";
         Log.i(TAG, "cmd:" + cmd);
         AdbShell.getInstance().execute(cmd);
@@ -244,7 +238,7 @@ public class Utils {
         AdbShell.getInstance().executeWithBlockingQueue(cmd, null);
     }
 
-    public static void hideKeyboard(View view) {
+    static void hideKeyboard(View view) {
         view.clearFocus();
         InputMethodManager imm = (InputMethodManager)view.getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
         // 系统键盘显示时才需要关闭
@@ -253,7 +247,7 @@ public class Utils {
         }
     }
 
-    public static void runOnUiThread(Runnable runnable) {
+    static void runOnUiThread(Runnable runnable) {
         if (Thread.currentThread() == Looper.getMainLooper().getThread()) {
             runnable.run();
         } else {
@@ -261,7 +255,7 @@ public class Utils {
         }
     }
 
-    public static List<String> getAllFiles(String filePath) {
+    static List<String> getAllFiles(String filePath) {
         List<String> files = new ArrayList<>();
 
         File file = new File(filePath);
@@ -281,7 +275,7 @@ public class Utils {
         return files;
     }
 
-    public static List<String> calculateDeviceSize() {
+    static List<String> calculateDeviceSize() {
         List<String> result = new ArrayList<>();
         AdbShell.getInstance().execute("getevent -lp", result);
 
@@ -447,5 +441,24 @@ public class Utils {
             return true;
         }
         return false;
+    }
+
+    static void recv(InputStream inputStream, byte[] buffer, int sum) throws Exception {
+        int read = 0;
+        while (sum - read > 0) {
+            int len = inputStream.read(buffer, read, sum - read);
+            if (len == -1) {
+                throw new RuntimeException("socket closed");
+            }
+            read += len;
+        }
+    }
+
+    static int byte4ToInt(byte[] bytes) {
+        int b0 = bytes[0] & 0xFF;
+        int b1 = bytes[1] & 0xFF;
+        int b2 = bytes[2] & 0xFF;
+        int b3 = bytes[3] & 0xFF;
+        return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
     }
 }

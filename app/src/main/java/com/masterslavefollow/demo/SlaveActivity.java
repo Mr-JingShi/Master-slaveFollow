@@ -100,14 +100,14 @@ public class SlaveActivity extends AppCompatActivity {
 
                 InputStream inputStream = socket.getInputStream();
                 while (!Thread.currentThread().isInterrupted()) {
-                    recv(inputStream, lengthBuffer, lengthBuffer.length);
+                    Utils.recv(inputStream, lengthBuffer, lengthBuffer.length);
 
-                    len = byte4ToInt(lengthBuffer);
+                    len = Utils.byte4ToInt(lengthBuffer);
                     if (eventBuffer.length < len) {
                         System.out.println("eventBuffer.length:" + eventBuffer.length + " < len:" + len);
                         eventBuffer = new byte[len];
                     }
-                    recv(inputStream, eventBuffer, len);
+                    Utils.recv(inputStream, eventBuffer, len);
 
                     String line = new String(eventBuffer, 0, len);
 
@@ -167,25 +167,6 @@ public class SlaveActivity extends AppCompatActivity {
                     e.printStackTrace();
                 }
             }
-        }
-
-        private void recv(InputStream inputStream, byte[] buffer, int sum) throws Exception {
-            int read = 0;
-            while (sum - read > 0) {
-                int len = inputStream.read(buffer, read, sum - read);
-                if (len == -1) {
-                    throw new RuntimeException("socket closed");
-                }
-                read += len;
-            }
-        }
-
-        public int byte4ToInt(byte[] bytes) {
-            int b0 = bytes[0] & 0xFF;
-            int b1 = bytes[1] & 0xFF;
-            int b2 = bytes[2] & 0xFF;
-            int b3 = bytes[3] & 0xFF;
-            return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
         }
     }
 }

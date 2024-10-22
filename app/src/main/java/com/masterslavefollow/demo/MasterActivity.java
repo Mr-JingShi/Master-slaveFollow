@@ -1,16 +1,12 @@
 package com.masterslavefollow.demo;
 
 import android.app.AlertDialog;
-import android.content.BroadcastReceiver;
-import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.util.Log;
-import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -533,7 +529,7 @@ public class MasterActivity extends AppCompatActivity {
                 });
                 convertView.setTag(holder);
             } else {
-                holder = (ViewHolder) convertView.getTag();
+                holder = (ViewHolder)convertView.getTag();
             }
 
             String caseName = (String)getItem(position);

@@ -44,8 +44,8 @@ final class RecordingAndPlayBack {
     private String mRecordingFileName;
     private String mPlaybackFileName;
     private Thread mRecordingThread;
-    private boolean mRecordingWorking = false;
     private Thread mPlaybackThread;
+    private boolean mRecordingWorking = false;
     private boolean mPlaybackWorking = false;
 
     public RecordingAndPlayBack(MasterActivity activity) {

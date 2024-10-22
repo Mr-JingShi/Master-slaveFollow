@@ -14,7 +14,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Queue;
 import java.util.Scanner;
 
 public class ScreenEventInjector {
@@ -62,17 +66,7 @@ public class ScreenEventInjector {
         }
     }
 
-    private enum DownStatus {
-        DOWN_STATUS_NOT_RECV,
-        DOWN_STATUS_RECV,
-        DOWN_STATUS_SEND
-    }
-
     private static class ScreenEventInjectorThread extends Thread {
-        private int[] xy = new int[2];
-        private boolean[] waitForXY = {true, true};
-        private long lastTouchDown;
-        private DownStatus downStatus = DownStatus.DOWN_STATUS_NOT_RECV;
         private String editViewText;
         private ScreenEventTracker.DeviceInfo remoteDeviceInfo = null;
         private FloatRectInfo remoteTargetFRI = new FloatRectInfo();
@@ -84,9 +78,17 @@ public class ScreenEventInjector {
         private float yRate = 0.0f;
         private int selfWidth = 0;
         private int selfHeight = 0;
-        private final int pointerCount = 1;
+        private int[] floatXs;
+        private int[] floatYs;
+        private List<Integer> listSlots;
+        private Queue<Integer> queueSlots;
         private MotionEvent.PointerProperties[] pointerProperties;
         private MotionEvent.PointerCoords[] pointerCoords;
+        private long lastTouchDown;
+        private int trackingIds = 0;
+        private int currentSlot = 0;
+        private int currentAction = MotionEvent.ACTION_DOWN;
+        private boolean needSendDown = false;
 
         public ScreenEventInjectorThread() {
             super("ScreenEventInjectorThread");
@@ -127,9 +129,13 @@ public class ScreenEventInjector {
                 e.printStackTrace();
             }
 
-            pointerProperties = new MotionEvent.PointerProperties[pointerCount];
-            pointerCoords = new MotionEvent.PointerCoords[pointerCount];
-            for (int i = 0; i < pointerCount; i++) {
+            floatXs = new int[10];
+            floatYs = new int[10];
+            listSlots = new ArrayList<>(10);
+            queueSlots = new ArrayDeque<>(10);
+            pointerProperties = new MotionEvent.PointerProperties[10];
+            pointerCoords = new MotionEvent.PointerCoords[10];
+            for (int i = 0; i < 10; i++) {
                 pointerProperties[i] = new MotionEvent.PointerProperties();
                 pointerProperties[i].id = i;
                 pointerProperties[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
@@ -189,56 +195,52 @@ public class ScreenEventInjector {
                         }
                     }
 
-                    // case 1:
-                    // [  121045.748499] /dev/input/event2: EV_ABS       ABS_MT_TRACKING_ID   00000760
-                    // [  121045.748499] /dev/input/event2: EV_ABS       ABS_MT_TOUCH_MAJOR   0000000f
-                    // [  121045.748499] /dev/input/event2: EV_ABS       ABS_MT_WIDTH_MAJOR   0000000f
-                    // [  121045.748499] /dev/input/event2: EV_ABS       ABS_MT_PRESSURE      0000000f
-                    // [  121045.748499] /dev/input/event2: EV_ABS       ABS_MT_POSITION_X    00001338
-                    // [  121045.748499] /dev/input/event2: EV_ABS       ABS_MT_POSITION_Y    00002dfa
-                    // [  121045.748499] /dev/input/event2: EV_KEY       BTN_TOUCH            DOWN
-                    // [  121045.748499] /dev/input/event2: EV_SYN       SYN_REPORT           00000000
-
-                    // case 2:
-                    // [    1018.868469] /dev/input/event2: EV_KEY       BTN_TOUCH            DOWN
-                    // [    1018.868469] /dev/input/event2: EV_ABS       ABS_MT_TRACKING_ID   00000026
-                    // [    1018.868469] /dev/input/event2: EV_ABS       ABS_MT_POSITION_X    0000020d
-                    // [    1018.868469] /dev/input/event2: EV_ABS       ABS_MT_POSITION_Y    00000466
-                    // [    1018.868469] /dev/input/event2: EV_ABS       ABS_MT_PRESSURE      0000001e
-                    // [    1018.868469] /dev/input/event2: EV_SYN       SYN_REPORT           00000000
-                    if (line.contains("ABS_MT_POSITION_X")) {
+                    if (line.contains("BTN_TOUCH")) {
+                        String[] splited = line.split("BTN_TOUCH");
+                        String action = splited[splited.length - 1].trim();
+                        System.out.println("BTN_TOUCH:" + action);
+                        if (action.equals("DOWN")) {
+                            needSendDown = true;
+                        }
+                    } else if (line.contains("ABS_MT_TRACKING_ID")) {
+                        String[] splited = line.split("ABS_MT_TRACKING_ID");
+                        String id = splited[splited.length - 1].trim();
+                        System.out.println("ABS_MT_TRACKING_ID:" + id);
+                        if (id.equals("ffffffff")) {
+                            if (--trackingIds == 0) {
+                                currentAction = MotionEvent.ACTION_UP;
+                            } else {
+                                currentAction = MotionEvent.ACTION_POINTER_UP | currentSlot * 0x0100;
+                            }
+                            queueSlots.offer(Integer.valueOf(currentSlot));
+                        } else {
+                            if (trackingIds++ == 0) {
+                                listSlots.clear();
+                                queueSlots.clear();
+                                currentSlot = 0;
+                                currentAction = MotionEvent.ACTION_DOWN;
+                            } else {
+                                currentAction = MotionEvent.ACTION_POINTER_DOWN | currentSlot * 0x0100;
+                            }
+                            System.out.println("add slot:" + currentSlot);
+                            listSlots.add(Integer.valueOf(currentSlot));
+                        }
+                    } else if (line.contains("ABS_MT_SLOT")) {
+                        String[] splited = line.split("ABS_MT_SLOT");
+                        String slot = splited[splited.length - 1].trim();
+                        System.out.println("slot:" + slot);
+                        currentSlot = Integer.parseInt(slot);
+                    } else if (line.contains("ABS_MT_POSITION_X")) {
                         String[] splited = line.split("ABS_MT_POSITION_X");
                         String x = splited[splited.length - 1].trim();
-                        xy[0] = Integer.parseInt(x, 16);
-
-                        waitForXY[0] = false;
-
-                        if (downStatus == DownStatus.DOWN_STATUS_SEND) {
-                            move();
-                        } else if (downStatus == DownStatus.DOWN_STATUS_RECV) {
-                            down();
-                        }
+                        floatXs[currentSlot] = Integer.parseInt(x, 16);
                     } else if (line.contains("ABS_MT_POSITION_Y")) {
                         String[] splited = line.split("ABS_MT_POSITION_Y");
                         String y = splited[splited.length - 1].trim();
-                        xy[1] = Integer.parseInt(y, 16);
-
-                        waitForXY[1] = false;
-
-                        if (downStatus == DownStatus.DOWN_STATUS_SEND) {
-                            move();
-                        } else if (downStatus == DownStatus.DOWN_STATUS_RECV) {
-                            down();
-                        }
-                    } else if (line.contains("BTN_TOUCH")) {
-                        if (line.contains("UP")) {
-                            downStatus = DownStatus.DOWN_STATUS_NOT_RECV;
-                            waitForXY[0] = waitForXY[1] = true;
-                            inject(MotionEvent.ACTION_UP, xy[0], xy[1]);
-                        } else if (line.contains("DOWN")) {
-                            downStatus = DownStatus.DOWN_STATUS_RECV;
-                            down();
-                        }
+                        floatYs[currentSlot] = Integer.parseInt(y, 16);
+                    } else if (line.contains("SYN_REPORT")) {
+                        inject();
+                        currentAction = MotionEvent.ACTION_MOVE;
                     } else if (line.startsWith("DEVICE_INFO")) {
                         // DEVICE_INFO ADD_DEVICE:/dev/input/event2;NAME:himax-touchscreen;ABS_X:12000;ABS_Y:19200;WIDTH:1920;HEIGTH:1200;DISPLAY_ID:0
                         remoteDeviceInfo = new ScreenEventTracker.DeviceInfo();
@@ -373,25 +375,6 @@ public class ScreenEventInjector {
             }
         }
 
-        private void move() {
-            if (!waitForXY[0] && !waitForXY[1]) {
-                inject(MotionEvent.ACTION_MOVE, xy[0], xy[1]);
-
-                // 接收下一次事件
-                waitForXY[0] = waitForXY[1] = true;
-            }
-        }
-
-        private void down() {
-            if (!waitForXY[0] && !waitForXY[1]) {
-                inject(MotionEvent.ACTION_DOWN, xy[0], xy[1]);
-
-                // 接收下一次事件
-                waitForXY[0] = waitForXY[1] = true;
-                downStatus = DownStatus.DOWN_STATUS_SEND;
-            }
-        }
-
         private static void recv(InputStream inputStream, byte[] buffer, int sum) throws Exception {
             int read = 0;
             while (sum - read > 0) {
@@ -411,92 +394,133 @@ public class ScreenEventInjector {
             return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
         }
 
-        public void inject(int action, int intX, int intY) {
-            // src 1200x1920 dst 1080x2160 1200x2000
+        public void inject() {
+            System.out.println("currentAction:" + currentAction);
+            int pointerCount = 0;
+            for (Integer integer : listSlots) {
+                int slot = integer.intValue();
+                System.out.println("slot:" + slot);
+                float x = (float) floatXs[slot] * xRate;
+                float y = (float) floatYs[slot] * yRate;
 
-            float x = (float) intX * xRate;
-            float y = (float) intY * yRate;
-
-            if (remoteDeviceInfo.orientation == 1) {
-                float tmp = y;
-                y = remoteDeviceInfo.width - x;
-                x = tmp;
-            }
-            System.out.println("x0:" + x + ", y0:" + y);
-
-            // 必须在target内
-            if (remoteTargetFRI.valid
-                    && (remoteTargetFRI.left > x
-                    || x > remoteTargetFRI.right
-                    || remoteTargetFRI.top > y
-                    || y > remoteTargetFRI.bottom)) {
-                System.out.println("not in target rect");
-                return;
-            }
-
-            if (LOCAL_PLAYBACK) {
-                // 单机模式时不能在tool内
-                if (remoteToolFRI.valid
-                        && remoteToolFRI.left <= x
-                        && x <= remoteToolFRI.right
-                        && remoteToolFRI.top <= y
-                        && y <= remoteToolFRI.bottom) {
-                    System.out.println("in tool rect:" + remoteToolFRI.toString());
-                    return;
+                if (remoteDeviceInfo.orientation == 1) {
+                    float tmp = y;
+                    y = remoteDeviceInfo.width - x;
+                    x = tmp;
                 }
-            } else {
-                // 主从模式时不能在target inputmethod内
-                if (remoteInputmethodFRI.valid
-                        && remoteInputmethodFRI.left <= x
-                        && x <= remoteInputmethodFRI.right
-                        && remoteInputmethodFRI.top <= y
-                        && y <= remoteInputmethodFRI.bottom) {
-                    System.out.println("in target inputmethod rect:" + remoteInputmethodFRI.toString());
+                System.out.println("x0:" + x + ", y0:" + y);
+
+                // 必须在target内
+                if (remoteTargetFRI.valid
+                        && (remoteTargetFRI.left > x
+                        || x > remoteTargetFRI.right
+                        || remoteTargetFRI.top > y
+                        || y > remoteTargetFRI.bottom)) {
+                    System.out.println("not in target rect");
                     return;
                 }
 
-                // 主从模式时不能在导航栏内
-                if (remoteNavigationFRI.valid
-                        && remoteNavigationFRI.left <= x
-                        && x <= remoteNavigationFRI.right
-                        && remoteNavigationFRI.top <= y
-                        && y <= remoteNavigationFRI.bottom) {
-                    System.out.println("in navigation rect:" + remoteNavigationFRI.toString());
-                    return;
-                }
-
-                if (remoteNavigationFRI.valid
-                        && (remoteNavigationFRI.right - remoteNavigationFRI.left) == remoteDeviceInfo.width
-                        && (remoteNavigationFRI.bottom - remoteNavigationFRI.top) == remoteDeviceInfo.navigation_bar_height) {
-                    x = (x*selfWidth)/remoteDeviceInfo.width;
-                    y = (y*(selfHeight - NAVIGATION_BAR_HEIGHT))/(remoteDeviceInfo.height - remoteDeviceInfo.navigation_bar_height);
+                if (LOCAL_PLAYBACK) {
+                    // 单机模式时不能在tool内
+                    if (remoteToolFRI.valid
+                            && remoteToolFRI.left <= x
+                            && x <= remoteToolFRI.right
+                            && remoteToolFRI.top <= y
+                            && y <= remoteToolFRI.bottom) {
+                        System.out.println("in tool rect:" + remoteToolFRI.toString());
+                        return;
+                    }
                 } else {
-                    x = (x*(selfWidth - NAVIGATION_BAR_HEIGHT))/(remoteDeviceInfo.width - remoteDeviceInfo.navigation_bar_height);
-                    y = (y*selfHeight)/remoteDeviceInfo.height;
+                    // 主从模式时不能在target inputmethod内
+                    if (remoteInputmethodFRI.valid
+                            && remoteInputmethodFRI.left <= x
+                            && x <= remoteInputmethodFRI.right
+                            && remoteInputmethodFRI.top <= y
+                            && y <= remoteInputmethodFRI.bottom) {
+                        System.out.println("in target inputmethod rect:" + remoteInputmethodFRI.toString());
+                        return;
+                    }
+
+                    // 主从模式时不能在导航栏内
+                    if (remoteNavigationFRI.valid
+                            && remoteNavigationFRI.left <= x
+                            && x <= remoteNavigationFRI.right
+                            && remoteNavigationFRI.top <= y
+                            && y <= remoteNavigationFRI.bottom) {
+                        System.out.println("in navigation rect:" + remoteNavigationFRI.toString());
+                        return;
+                    }
+
+                    if (remoteNavigationFRI.valid
+                            && (remoteNavigationFRI.right - remoteNavigationFRI.left) == remoteDeviceInfo.width
+                            && (remoteNavigationFRI.bottom - remoteNavigationFRI.top) == remoteDeviceInfo.navigation_bar_height) {
+                        x = (x*selfWidth)/remoteDeviceInfo.width;
+                        y = (y*(selfHeight - NAVIGATION_BAR_HEIGHT))/(remoteDeviceInfo.height - remoteDeviceInfo.navigation_bar_height);
+                    } else {
+                        x = (x*(selfWidth - NAVIGATION_BAR_HEIGHT))/(remoteDeviceInfo.width - remoteDeviceInfo.navigation_bar_height);
+                        y = (y*selfHeight)/remoteDeviceInfo.height;
+                    }
+
+                    // 主从模式时不能在自己输入法内
+                    if (selfInputmethodFRI.valid
+                            && selfInputmethodFRI.left <= x
+                            && x <= selfInputmethodFRI.right
+                            && selfInputmethodFRI.top <= y
+                            && y <= selfInputmethodFRI.bottom) {
+                        System.out.println("in self inputmethod rect:" + selfInputmethodFRI.toString());
+                        return;
+                    }
                 }
 
-                // 主从模式时不能在自己输入法内
-                if (selfInputmethodFRI.valid
-                        && selfInputmethodFRI.left <= x
-                        && x <= selfInputmethodFRI.right
-                        && selfInputmethodFRI.top <= y
-                        && y <= selfInputmethodFRI.bottom) {
-                    System.out.println("in self inputmethod rect:" + selfInputmethodFRI.toString());
-                    return;
+                System.out.println("x:" + x + ", y:" + y);
+
+                pointerCoords[pointerCount].x = x;
+                pointerCoords[pointerCount].y = y;
+                pointerProperties[pointerCount].id = slot;
+                pointerCoords[pointerCount].pressure = currentAction == MotionEvent.ACTION_UP ? 0.0f : 1.0f;
+                ++pointerCount;
+            }
+
+            if (pointerCount > 0) {
+                boolean needRecurse = false;
+                long now = SystemClock.uptimeMillis();
+                if (currentAction == MotionEvent.ACTION_DOWN) {
+                    lastTouchDown = now;
+                    needSendDown = false;
+                } else if (currentAction == MotionEvent.ACTION_UP) {
+                    int slot = queueSlots.remove().intValue();
+                    if (pointerCount > 1) {
+                        needRecurse = true;
+                        System.out.println("currentSlot:" + currentSlot);
+
+                        currentAction = MotionEvent.ACTION_POINTER_UP | currentSlot * 0x0100;
+                    }
+                    System.out.println("ACTION_UP remove slot:" + slot);
+                    listSlots.remove(Integer.valueOf(slot));
+                } else if ((currentAction & MotionEvent.ACTION_MASK) == MotionEvent.ACTION_POINTER_DOWN) {
+                    if (needSendDown) {
+                        needSendDown = false;
+                        lastTouchDown = now;
+                        SendMotionEvent(MotionEvent.ACTION_DOWN, 1, now);
+                        System.out.println("need send ACTION_DOWN first before send ACTION_POINTER_DOWN");
+                    }
+                } else if ((currentAction & MotionEvent.ACTION_MASK) == MotionEvent.ACTION_POINTER_UP) {
+                    int slot = queueSlots.remove().intValue();
+                    System.out.println("ACTION_POINTER_UP remove slot:" + slot);
+                    listSlots.remove(Integer.valueOf(slot));
+                }
+
+                SendMotionEvent(currentAction, pointerCount, now);
+
+                if (needRecurse) {
+                    currentAction = MotionEvent.ACTION_UP;
+                    inject();
                 }
             }
+        }
 
-            System.out.println("x:" + x + ", y:" + y);
-
-            long now = SystemClock.uptimeMillis();
-
-            pointerCoords[0].x = x;
-            pointerCoords[0].y = y;
-            pointerCoords[0].pressure = action == MotionEvent.ACTION_UP ? 0.0f : 1.0f;
-            if (action == MotionEvent.ACTION_DOWN) {
-                lastTouchDown = now;
-            }
-
+        private void SendMotionEvent(int action, int pointerCount, long now) {
+            System.out.println("pointerCount:" + pointerCount);
             MotionEvent event = MotionEvent.obtain(lastTouchDown, now, action, pointerCount, pointerProperties, pointerCoords, 0, 0, 1.0f, 1.0f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
             if (remoteDeviceInfo.display_id > 0) {
                 InputManager.setDisplayId(event, remoteDeviceInfo.display_id);
@@ -504,16 +528,6 @@ public class ScreenEventInjector {
 
             InputManager.getInputManager().injectInputEvent(event);
             System.out.println("injectInputEvent:" + event);
-
-            if (action == MotionEvent.ACTION_DOWN) {
-                event = MotionEvent.obtain(lastTouchDown, now, MotionEvent.ACTION_MOVE, pointerCount, pointerProperties, pointerCoords, 0, 0, 1.0f, 1.0f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0);
-                if (remoteDeviceInfo.display_id > 0) {
-                    InputManager.setDisplayId(event, remoteDeviceInfo.display_id);
-                }
-
-                InputManager.getInputManager().injectInputEvent(event);
-                System.out.println("injectInputEvent:" + event);
-            }
         }
 
         private void sendTextEvent(final String text) {

@@ -13,25 +13,28 @@ import android.view.WindowManager;
 public class ScreenOrientationChangeTrigger {
     private static final String TAG = ScreenOrientationChangeTrigger.class.getSimpleName();
 
-    public static void registerReceiver(Activity activity) {
+    public static void registerReceiver() {
         // 注册屏幕旋转方向监听器
-        activity.registerReceiver(new BroadcastReceiver() {
+        Utils.getContext().registerReceiver(new BroadcastReceiver() {
                     @Override
                     public void onReceive(Context context, Intent intent) {
-                        if (intent == null) {
-                            return;
-                        }
+            if (intent != null) {
+                String action = intent.getAction();
+                // 屏幕旋转
+                if (action.equals(Intent.ACTION_CONFIGURATION_CHANGED)) {
+                    int rotation = getRotation();
+                }
+            }
+        }
+        }, new IntentFilter(Intent.ACTION_CONFIGURATION_CHANGED));
 
-                        Log.i(TAG, "Intent extras: " + intent.getExtras());
-                        Log.i(TAG, "Intent data: " + intent.getData());
-                        Log.i(TAG, "Intent scheme: " + intent.getScheme());
-                    }
-                 },
-            new IntentFilter(Intent.ACTION_CONFIGURATION_CHANGED));
+        int rotation = getRotation();
+    }
 
-        WindowManager wm = (WindowManager) activity.getSystemService(Context.WINDOW_SERVICE);
+    public static int getRotation() {
+        WindowManager wm = (WindowManager) Utils.getContext().getSystemService(Context.WINDOW_SERVICE);
         int rotation = wm.getDefaultDisplay().getRotation();
-
         Log.i(TAG, "rotation:" + rotation);
+        return rotation;
     }
 }

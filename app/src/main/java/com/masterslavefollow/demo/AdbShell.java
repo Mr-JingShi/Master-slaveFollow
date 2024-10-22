@@ -1,8 +1,6 @@
 package com.masterslavefollow.demo;
 
 import android.os.Build;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
 
 import java.io.BufferedReader;
@@ -30,21 +28,21 @@ import io.github.muntashirakon.adb.android.AndroidUtils;
 // https://github.com/MuntashirAkon/libadb-android/blob/master/app/src/main/java/io/github/muntashirakon/adb/testapp/MainViewModel.java
 
 public class AdbShell {
-    private static String TAG = "AdbDebug";
+    private static String TAG = "AdbShell";
     private final ExecutorService mExecutors;
     private boolean mConnectSatus = false;
     private int mPort = 0;
-    private String mHostAddress;
     private static AdbShell INSTANCE;
 
     private AdbShell() {
         mExecutors = Executors.newFixedThreadPool(3);
     }
 
+    public static void init() {
+        INSTANCE = new AdbShell();
+    }
+
     public static AdbShell getInstance() {
-        if (INSTANCE == null) {
-            INSTANCE = new AdbShell();
-        }
         return INSTANCE;
     }
 
@@ -87,8 +85,6 @@ public class AdbShell {
                 th.printStackTrace();
             }
         });
-
-        mExecutors.shutdown();
     }
 
     public void getPairingPort(Runnable runnable) {
@@ -97,9 +93,6 @@ public class AdbShell {
             CountDownLatch resolveHostAndPort = new CountDownLatch(1);
 
             AdbMdns adbMdns = new AdbMdns(Utils.getContext(), AdbMdns.SERVICE_TYPE_TLS_PAIRING, (hostAddress, port) -> {
-                mHostAddress = hostAddress.getHostAddress();
-
-                Log.i(TAG, "hostAddress:" + mHostAddress + " port:" + port);
                 atomicPort.set(port);
                 resolveHostAndPort.countDown();
             });
